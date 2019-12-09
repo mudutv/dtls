@@ -1,7 +1,6 @@
 package dtls
 
 import (
-	"crypto/tls"
 	"fmt"
 	"net"
 	"testing"
@@ -16,7 +15,7 @@ func TestSimpleReadWrite(t *testing.T) {
 	defer report()
 
 	ca, cb := net.Pipe()
-	certificate, err := GenerateSelfSigned()
+	certificate, privateKey, err := GenerateSelfSigned()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -24,7 +23,8 @@ func TestSimpleReadWrite(t *testing.T) {
 
 	go func() {
 		server, sErr := testServer(cb, &Config{
-			Certificates:  []tls.Certificate{certificate},
+			Certificate:   certificate,
+			PrivateKey:    privateKey,
 			LoggerFactory: logging.NewDefaultLoggerFactory(),
 		}, false)
 		if sErr != nil {
@@ -65,11 +65,12 @@ func TestSimpleReadWrite(t *testing.T) {
 func benchmarkConn(b *testing.B, n int64) {
 	b.Run(fmt.Sprintf("%d", n), func(b *testing.B) {
 		ca, cb := net.Pipe()
-		certificate, err := GenerateSelfSigned()
+		certificate, privateKey, err := GenerateSelfSigned()
 		server := make(chan *Conn)
 		go func() {
 			s, sErr := testServer(cb, &Config{
-				Certificates: []tls.Certificate{certificate},
+				Certificate: certificate,
+				PrivateKey:  privateKey,
 			}, false)
 			if err != nil {
 				b.Error(sErr)

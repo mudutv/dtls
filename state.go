@@ -2,6 +2,7 @@ package dtls
 
 import (
 	"bytes"
+	"crypto/x509"
 	"encoding/gob"
 	"sync/atomic"
 )
@@ -15,7 +16,7 @@ type State struct {
 	cipherSuite               cipherSuite // nil if a cipherSuite hasn't been chosen
 
 	srtpProtectionProfile SRTPProtectionProfile // Negotiated SRTPProtectionProfile
-	remoteCertificate     [][]byte
+	remoteCertificate     *x509.Certificate
 
 	isClient bool
 

@@ -1,12 +1,11 @@
 package e2e
 
 import (
-	"crypto/tls"
 	"math/rand"
 	"testing"
 	"time"
 
-	"github.com/pion/dtls/v2"
+	"github.com/pion/dtls"
 	transportTest "github.com/pion/transport/test"
 )
 
@@ -24,12 +23,12 @@ func TestPionE2ELossy(t *testing.T) {
 		err      error
 	}
 
-	serverCert, err := dtls.GenerateSelfSigned()
+	serverCert, serverKey, err := dtls.GenerateSelfSigned()
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	clientCert, err := dtls.GenerateSelfSigned()
+	clientCert, clientKey, err := dtls.GenerateSelfSigned()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,7 +118,8 @@ func TestPionE2ELossy(t *testing.T) {
 			}
 
 			if test.DoClientAuth {
-				cfg.Certificates = []tls.Certificate{clientCert}
+				cfg.Certificate = clientCert
+				cfg.PrivateKey = clientKey
 			}
 
 			client, startupErr := dtls.Client(br.GetConn0(), cfg)
@@ -128,7 +128,8 @@ func TestPionE2ELossy(t *testing.T) {
 
 		go func() {
 			cfg := &dtls.Config{
-				Certificates:   []tls.Certificate{serverCert},
+				Certificate:    serverCert,
+				PrivateKey:     serverKey,
 				FlightInterval: flightInterval,
 				MTU:            test.MTU,
 			}

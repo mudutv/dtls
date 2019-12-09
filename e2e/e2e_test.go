@@ -1,8 +1,6 @@
 package e2e
 
 import (
-	"crypto/rand"
-	"crypto/tls"
 	"errors"
 	"io"
 	"net"
@@ -11,9 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"golang.org/x/crypto/ed25519"
-
-	"github.com/pion/dtls/v2"
+	"github.com/pion/dtls"
 	"github.com/pion/transport/test"
 )
 
@@ -65,18 +61,17 @@ func simpleReadWrite(errChan chan error, outChan chan string, conn io.ReadWriter
 }
 
 func assertE2ECommunication(clientConfig, serverConfig *dtls.Config, serverPort int, t *testing.T) {
-	var (
-		messageRecvCount uint64 // Counter to make sure both sides got a message
-		clientMutex      sync.Mutex
-		clientConn       net.Conn
-		serverMutex      sync.Mutex
-		serverConn       net.Conn
-		serverListener   *dtls.Listener
-		serverReady      = make(chan struct{})
-		errChan          = make(chan error)
-		clientChan       = make(chan string)
-		serverChan       = make(chan string)
-	)
+	errChan := make(chan error)
+	clientChan := make(chan string)
+	serverChan := make(chan string)
+	var messageRecvCount uint64 // Counter to make sure both sides got a message
+	var clientMutex sync.Mutex
+	var clientConn net.Conn
+	var serverMutex sync.Mutex
+	var serverConn net.Conn
+	var serverListener *dtls.Listener
+
+	serverReady := make(chan struct{})
 
 	// DTLS Client
 	go func() {
@@ -196,51 +191,20 @@ func TestPionE2ESimple(t *testing.T) {
 		dtls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
 		dtls.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,
 	} {
-		cert, err := dtls.GenerateSelfSigned()
+		cert, key, err := dtls.GenerateSelfSigned()
 		if err != nil {
 			t.Fatal(err)
 		}
 
 		cfg := &dtls.Config{
-			Certificates:       []tls.Certificate{cert},
+			Certificate:        cert,
+			PrivateKey:         key,
 			CipherSuites:       []dtls.CipherSuiteID{cipherSuite},
 			InsecureSkipVerify: true,
 			ConnectTimeout:     dtls.ConnectTimeoutOption(2 * time.Second),
 		}
 		assertE2ECommunication(cfg, cfg, serverPort, t)
 
-	}
-}
-
-func TestPionE2ESimpleED25519(t *testing.T) {
-	lim := test.TimeOut(time.Second * 30)
-	defer lim.Stop()
-
-	report := test.CheckRoutines(t)
-	defer report()
-
-	serverPort := randomPort(t)
-
-	for _, cipherSuite := range []dtls.CipherSuiteID{
-		dtls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
-		dtls.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,
-	} {
-		_, key, err := ed25519.GenerateKey(rand.Reader)
-		if err != nil {
-			t.Fatal(err)
-		}
-		cert, err := dtls.SelfSign(key)
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		cfg := &dtls.Config{
-			Certificates:       []tls.Certificate{cert},
-			CipherSuites:       []dtls.CipherSuiteID{cipherSuite},
-			InsecureSkipVerify: true,
-			ConnectTimeout:     dtls.ConnectTimeoutOption(5 * time.Second),
-		}
-		assertE2ECommunication(cfg, cfg, serverPort, t)
 	}
 }
 
@@ -283,13 +247,14 @@ func TestPionE2EMTUs(t *testing.T) {
 		1000,
 		100,
 	} {
-		cert, err := dtls.GenerateSelfSigned()
+		cert, key, err := dtls.GenerateSelfSigned()
 		if err != nil {
 			t.Fatal(err)
 		}
 
 		cfg := &dtls.Config{
-			Certificates:       []tls.Certificate{cert},
+			Certificate:        cert,
+			PrivateKey:         key,
 			CipherSuites:       []dtls.CipherSuiteID{dtls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256},
 			InsecureSkipVerify: true,
 			MTU:                mtu,

@@ -1,13 +1,12 @@
 package main
 
 import (
-	"crypto/tls"
 	"fmt"
 	"net"
 	"time"
 
-	"github.com/pion/dtls/v2"
-	"github.com/pion/dtls/v2/examples/util"
+	"github.com/pion/dtls"
+	"github.com/pion/dtls/examples/util"
 )
 
 func main() {
@@ -15,7 +14,7 @@ func main() {
 	addr := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 4444}
 
 	// Generate a certificate and private key to secure the connection
-	certificate, genErr := dtls.GenerateSelfSigned()
+	certificate, privateKey, genErr := dtls.GenerateSelfSigned()
 	util.Check(genErr)
 
 	//
@@ -24,7 +23,8 @@ func main() {
 
 	// Prepare the configuration of the DTLS connection
 	config := &dtls.Config{
-		Certificates:         []tls.Certificate{certificate},
+		Certificate:          certificate,
+		PrivateKey:           privateKey,
 		InsecureSkipVerify:   true,
 		ExtendedMasterSecret: dtls.RequireExtendedMasterSecret,
 		ConnectTimeout:       dtls.ConnectTimeoutOption(30 * time.Second),

@@ -1,18 +1,18 @@
 package dtls
 
 import (
+	"errors"
 	"net"
 	"time"
 
-	"github.com/pion/dtls/v2/internal/udp"
+	"github.com/pion/dtls/internal/udp"
 )
 
 // Listen creates a DTLS listener
 func Listen(network string, laddr *net.UDPAddr, config *Config) (*Listener, error) {
-	if err := validateConfig(config); err != nil {
-		return nil, err
+	if config == nil {
+		return nil, errors.New("no config provided")
 	}
-
 	parent, err := udp.Listen(network, laddr)
 	if err != nil {
 		return nil, err

@@ -1,12 +1,9 @@
 package dtls
 
 import (
-	"crypto/ecdsa"
-	"crypto/tls"
+	"crypto"
 	"crypto/x509"
 	"time"
-
-	"golang.org/x/crypto/ed25519"
 
 	"github.com/pion/logging"
 )
@@ -17,8 +14,11 @@ type Config struct {
 	// Certificates contains certificate chain to present to the other side of the connection.
 	// Server MUST set this if PSK is non-nil
 	// client SHOULD sets this so CertificateRequests can be handled if PSK is non-nil
-	// TODO: add support to use more certificates then one.
-	Certificates []tls.Certificate
+	Certificate *x509.Certificate
+
+	// PrivateKey contains matching private key for the certificate
+	// only ECDSA is supported
+	PrivateKey crypto.PrivateKey
 
 	// CipherSuites is a list of supported cipher suites.
 	// If CipherSuites is nil, a default list is used
@@ -64,18 +64,13 @@ type Config struct {
 	// considering this callback. If normal verification is disabled by
 	// setting InsecureSkipVerify, or (for a server) when ClientAuth is
 	// RequestClientCert or RequireAnyClientCert, then this callback will
-	// be considered but the verifiedChains will always be nil.
-	VerifyPeerCertificate func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error
+	// be considered but the verified flag will always be false.
+	VerifyPeerCertificate func(cer *x509.Certificate, verified bool) error
 
 	// RootCAs defines the set of root certificate authorities
 	// that one peer uses when verifying the other peer's certificates.
 	// If RootCAs is nil, TLS uses the host's root CA set.
 	RootCAs *x509.CertPool
-
-	// ClientCAs defines the set of root certificate authorities
-	// that servers use if required to verify a client certificate
-	// by the policy in ClientAuth.
-	ClientCAs *x509.CertPool
 
 	// ServerName is used to verify the hostname on the returned
 	// certificates unless InsecureSkipVerify is given.
@@ -128,31 +123,3 @@ const (
 	RequireExtendedMasterSecret
 	DisableExtendedMasterSecret
 )
-
-func validateConfig(config *Config) error {
-	switch {
-	case config == nil:
-		return errNoConfigProvided
-	case len(config.Certificates) > 0 && config.PSK != nil:
-		return errPSKAndCertificate
-	case config.PSKIdentityHint != nil && config.PSK == nil:
-		return errIdentityNoPSK
-	}
-
-	for _, cert := range config.Certificates {
-		if cert.Certificate == nil {
-			return errInvalidCertificate
-		}
-		if cert.PrivateKey != nil {
-			switch cert.PrivateKey.(type) {
-			case ed25519.PrivateKey:
-			case *ecdsa.PrivateKey:
-			default:
-				return errInvalidPrivateKey
-			}
-		}
-	}
-
-	_, err := parseCipherSuites(config.CipherSuites, config.PSK == nil, config.PSK != nil)
-	return err
-}

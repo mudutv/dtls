@@ -11,8 +11,6 @@ import (
 	"encoding/binary"
 	"math/big"
 	"time"
-
-	"golang.org/x/crypto/ed25519"
 )
 
 type ecdsaSignature struct {
@@ -41,9 +39,6 @@ func valueKeySignature(clientRandom, serverRandom, publicKey []byte, namedCurve 
 func generateKeySignature(clientRandom, serverRandom, publicKey []byte, namedCurve namedCurve, privateKey crypto.PrivateKey, hashAlgorithm HashAlgorithm) ([]byte, error) {
 	hashed := valueKeySignature(clientRandom, serverRandom, publicKey, namedCurve, hashAlgorithm)
 	switch p := privateKey.(type) {
-	case ed25519.PrivateKey:
-		// https://crypto.stackexchange.com/a/55483
-		return p.Sign(rand.Reader, hashed, crypto.Hash(0))
 	case *ecdsa.PrivateKey:
 		return p.Sign(rand.Reader, hashed, crypto.SHA256)
 	case *rsa.PrivateKey:
@@ -53,21 +48,8 @@ func generateKeySignature(clientRandom, serverRandom, publicKey []byte, namedCur
 	return nil, errKeySignatureGenerateUnimplemented
 }
 
-func verifyKeySignature(hash, remoteKeySignature []byte, hashAlgorithm HashAlgorithm, rawCertificates [][]byte) error {
-	if len(rawCertificates) == 0 {
-		return errLengthMismatch
-	}
-	certificate, err := x509.ParseCertificate(rawCertificates[0])
-	if err != nil {
-		return err
-	}
-
+func verifyKeySignature(hash, remoteKeySignature []byte, hashAlgorithm HashAlgorithm, certificate *x509.Certificate) error {
 	switch p := certificate.PublicKey.(type) {
-	case ed25519.PublicKey:
-		if ok := ed25519.Verify(p, hash, remoteKeySignature); !ok {
-			return errKeySignatureMismatch
-		}
-		return nil
 	case *ecdsa.PublicKey:
 		ecdsaSig := &ecdsaSignature{}
 		if _, err := asn1.Unmarshal(remoteKeySignature, ecdsaSig); err != nil {
@@ -106,9 +88,6 @@ func generateCertificateVerify(handshakeBodies []byte, privateKey crypto.Private
 	hashed := h.Sum(nil)
 
 	switch p := privateKey.(type) {
-	case ed25519.PrivateKey:
-		// https://crypto.stackexchange.com/a/55483
-		return p.Sign(rand.Reader, hashed, crypto.Hash(0))
 	case *ecdsa.PrivateKey:
 		return p.Sign(rand.Reader, hashed, crypto.SHA256)
 	case *rsa.PrivateKey:
@@ -118,22 +97,9 @@ func generateCertificateVerify(handshakeBodies []byte, privateKey crypto.Private
 	return nil, errInvalidSignatureAlgorithm
 }
 
-func verifyCertificateVerify(handshakeBodies []byte, hashAlgorithm HashAlgorithm, remoteKeySignature []byte, rawCertificates [][]byte) error {
-	if len(rawCertificates) == 0 {
-		return errLengthMismatch
-	}
-	certificate, err := x509.ParseCertificate(rawCertificates[0])
-	if err != nil {
-		return err
-	}
-
+func verifyCertificateVerify(handshakeBodies []byte, hashAlgorithm HashAlgorithm, remoteKeySignature []byte, certificate *x509.Certificate) error {
 	hash := hashAlgorithm.digest(handshakeBodies)
 	switch p := certificate.PublicKey.(type) {
-	case ed25519.PublicKey:
-		if ok := ed25519.Verify(p, hash, remoteKeySignature); !ok {
-			return errKeySignatureMismatch
-		}
-		return nil
 	case *ecdsa.PublicKey:
 		ecdsaSig := &ecdsaSignature{}
 		if _, err := asn1.Unmarshal(remoteKeySignature, ecdsaSig); err != nil {
@@ -156,56 +122,30 @@ func verifyCertificateVerify(handshakeBodies []byte, hashAlgorithm HashAlgorithm
 	return errKeySignatureVerifyUnimplemented
 }
 
-func loadCerts(rawCertificates [][]byte) ([]*x509.Certificate, error) {
-	if len(rawCertificates) == 0 {
-		return nil, errLengthMismatch
-	}
-
-	certs := make([]*x509.Certificate, 0, len(rawCertificates))
-	for _, rawCert := range rawCertificates {
-		cert, err := x509.ParseCertificate(rawCert)
-		if err != nil {
-			return nil, err
-		}
-		certs = append(certs, cert)
-	}
-	return certs, nil
-}
-
-func verifyClientCert(rawCertificates [][]byte, roots *x509.CertPool) (chains [][]*x509.Certificate, err error) {
-	certificate, err := loadCerts(rawCertificates)
-	if err != nil {
-		return nil, err
-	}
-	intermediateCAPool := x509.NewCertPool()
-	for _, cert := range certificate[1:] {
-		intermediateCAPool.AddCert(cert)
-	}
+func verifyClientCert(cert *x509.Certificate, roots *x509.CertPool) error {
 	opts := x509.VerifyOptions{
 		Roots:         roots,
 		CurrentTime:   time.Now(),
-		Intermediates: intermediateCAPool,
+		Intermediates: x509.NewCertPool(),
 		KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
 	}
-	return certificate[0].Verify(opts)
+	if _, err := cert.Verify(opts); err != nil {
+		return err
+	}
+	return nil
 }
 
-func verifyServerCert(rawCertificates [][]byte, roots *x509.CertPool, serverName string) (chains [][]*x509.Certificate, err error) {
-	certificate, err := loadCerts(rawCertificates)
-	if err != nil {
-		return nil, err
-	}
-	intermediateCAPool := x509.NewCertPool()
-	for _, cert := range certificate[1:] {
-		intermediateCAPool.AddCert(cert)
-	}
+func verifyServerCert(cert *x509.Certificate, roots *x509.CertPool, serverName string) error {
 	opts := x509.VerifyOptions{
 		Roots:         roots,
 		CurrentTime:   time.Now(),
 		DNSName:       serverName,
-		Intermediates: intermediateCAPool,
+		Intermediates: x509.NewCertPool(),
 	}
-	return certificate[0].Verify(opts)
+	if _, err := cert.Verify(opts); err != nil {
+		return err
+	}
+	return nil
 }
 
 func generateAEADAdditionalData(h *recordLayerHeader, payloadLen int) []byte {

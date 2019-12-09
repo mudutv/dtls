@@ -5,15 +5,12 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
-	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/binary"
 	"encoding/hex"
 	"math/big"
 	"time"
-
-	"golang.org/x/crypto/ed25519"
 )
 
 // Parse a big endian uint24
@@ -40,38 +37,21 @@ func putBigEndianUint48(out []byte, in uint64) {
 }
 
 // GenerateSelfSigned creates a self-signed certificate
-func GenerateSelfSigned() (tls.Certificate, error) {
+func GenerateSelfSigned() (*x509.Certificate, crypto.PrivateKey, error) {
 	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
-		return tls.Certificate{}, err
+		return nil, nil, err
 	}
 
-	return SelfSign(priv)
-}
+	origin := make([]byte, 16)
 
-// SelfSign creates a self-signed certificate from a elliptic curve key
-func SelfSign(key crypto.PrivateKey) (tls.Certificate, error) {
-	var (
-		pubKey    crypto.PublicKey
-		origin    = make([]byte, 16)
-		maxBigInt = new(big.Int) // Max random value, a 130-bits integer, i.e 2^130 - 1
-	)
-
-	switch k := key.(type) {
-	case ed25519.PrivateKey:
-		pubKey = k.Public()
-	case *ecdsa.PrivateKey:
-		pubKey = k.Public()
-	default:
-		return tls.Certificate{}, errInvalidPrivateKey
-	}
-
+	// Max random value, a 130-bits integer, i.e 2^130 - 1
+	maxBigInt := new(big.Int)
 	/* #nosec */
 	maxBigInt.Exp(big.NewInt(2), big.NewInt(130), nil).Sub(maxBigInt, big.NewInt(1))
-	/* #nosec */
 	serialNumber, err := rand.Int(rand.Reader, maxBigInt)
 	if err != nil {
-		return tls.Certificate{}, err
+		return nil, nil, err
 	}
 
 	template := x509.Certificate{
@@ -89,15 +69,17 @@ func SelfSign(key crypto.PrivateKey) (tls.Certificate, error) {
 		IsCA:                  true,
 	}
 
-	raw, err := x509.CreateCertificate(rand.Reader, &template, &template, pubKey, key)
+	raw, err := x509.CreateCertificate(rand.Reader, &template, &template, &priv.PublicKey, priv)
 	if err != nil {
-		return tls.Certificate{}, err
+		return nil, nil, err
 	}
 
-	return tls.Certificate{
-		Certificate: [][]byte{raw},
-		PrivateKey:  key,
-	}, nil
+	cert, err := x509.ParseCertificate(raw)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return cert, priv, nil
 }
 
 func max(a, b int) int {

@@ -125,10 +125,6 @@ Check out the **[contributing wiki](https://github.com/pion/webrtc/wiki/Contribu
 * [Lander Noterman](https://github.com/LanderN)
 * [Aleksandr Razumov](https://github.com/ernado) - *Fuzzing*
 * [Ryan Gordon](https://github.com/ryangordon)
-* [Stefan Tatschner](https://rumpelsepp.org/contact.html)
-* [Hayden James](https://github.com/hjames9)
-* [Jozef Kralik](https://github.com/jkralik)
-* [Robert Eperjesi](https://github.com/epes)
 
 ### License
 MIT License - see [LICENSE](LICENSE) for full text
