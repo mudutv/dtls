@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pion/logging"
-	"github.com/pion/transport/test"
+	"github.com/mudutv/logging"
+	"github.com/mudutv/transport/test"
 )
 
 func TestSimpleReadWrite(t *testing.T) {
