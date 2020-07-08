@@ -6,7 +6,6 @@ import (
 )
 
 func TestExtensionSupportedSignatureAlgorithms(t *testing.T) {
-
 	rawExtensionSupportedSignatureAlgorithms := []byte{
 		0x00, 0x0d,
 		0x00, 0x08,
@@ -17,9 +16,9 @@ func TestExtensionSupportedSignatureAlgorithms(t *testing.T) {
 	}
 	parsedExtensionSupportedSignatureAlgorithms := &extensionSupportedSignatureAlgorithms{
 		signatureHashAlgorithms: []signatureHashAlgorithm{
-			{HashAlgorithmSHA256, signatureAlgorithmECDSA},
-			{HashAlgorithmSHA384, signatureAlgorithmECDSA},
-			{HashAlgorithmSHA512, signatureAlgorithmECDSA},
+			{hashAlgorithmSHA256, signatureAlgorithmECDSA},
+			{hashAlgorithmSHA384, signatureAlgorithmECDSA},
+			{hashAlgorithmSHA512, signatureAlgorithmECDSA},
 		},
 	}
 

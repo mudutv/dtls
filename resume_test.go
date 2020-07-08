@@ -2,11 +2,15 @@ package dtls
 
 import (
 	"bytes"
+	"crypto/tls"
 	"fmt"
 	"net"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/mudutv/dtls/v2/pkg/crypto/selfsign"
+	"github.com/mudutv/transport/test"
 )
 
 func TestResumeClient(t *testing.T) {
@@ -23,7 +27,15 @@ func fatal(t *testing.T, errChan chan error, err error) {
 }
 
 func DoTestResume(t *testing.T, newLocal, newRemote func(net.Conn, *Config) (*Conn, error)) {
-	certificate, privateKey, err := GenerateSelfSigned()
+	// Limit runtime in case of deadlocks
+	lim := test.TimeOut(time.Second * 20)
+	defer lim.Stop()
+
+	// Check for leaking routines
+	report := test.CheckRoutines(t)
+	defer report()
+
+	certificate, err := selfsign.GenerateSelfSigned()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -42,8 +54,7 @@ func DoTestResume(t *testing.T, newLocal, newRemote func(net.Conn, *Config) (*Co
 		}
 	}()
 	config := &Config{
-		Certificate:          certificate,
-		PrivateKey:           privateKey,
+		Certificates:         []tls.Certificate{certificate},
 		InsecureSkipVerify:   true,
 		ExtendedMasterSecret: RequireExtendedMasterSecret,
 	}
@@ -76,6 +87,9 @@ func DoTestResume(t *testing.T, newLocal, newRemote func(net.Conn, *Config) (*Co
 	if err != nil {
 		fatal(t, errChan, err)
 	}
+	defer func() {
+		_ = local.Close()
+	}()
 
 	// Test write and read
 	message := []byte("Hello")
@@ -94,18 +108,12 @@ func DoTestResume(t *testing.T, newLocal, newRemote func(net.Conn, *Config) (*Co
 		fatal(t, errChan, fmt.Errorf("messages missmatch: %s != %s", message, recv[:n]))
 	}
 
-	// Export dtls connection
-	var state *State
-	var innerConn net.Conn
-	state, innerConn, err = local.Export()
-	if err != nil {
-		fatal(t, errChan, err)
-	}
-	if err = innerConn.Close(); err != nil {
+	if err = localConn1.Close(); err != nil {
 		fatal(t, errChan, err)
 	}
 
 	// Serialize and deserialize state
+	state := local.ConnectionState()
 	var b []byte
 	b, err = state.MarshalBinary()
 	if err != nil {
@@ -118,10 +126,13 @@ func DoTestResume(t *testing.T, newLocal, newRemote func(net.Conn, *Config) (*Co
 
 	// Resume dtls connection
 	var resumed net.Conn
-	resumed, err = Resume(state, localConn2, config)
+	resumed, err = Resume(deserialized, localConn2, config)
 	if err != nil {
 		fatal(t, errChan, err)
 	}
+	defer func() {
+		_ = resumed.Close()
+	}()
 
 	// Test write and read on resumed connection
 	if _, err = resumed.Write(message); err != nil {

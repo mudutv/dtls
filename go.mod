@@ -1,9 +1,12 @@
-module github.com/mudutv/dtls
+module github.com/mudutv/dtls/v2
 
 require (
-	github.com/mudutv/logging v0.2.3-0.20191210040841-267e46158a81
-	github.com/mudutv/transport v0.8.11-0.20191210054210-15ce38527120
-	golang.org/x/crypto v0.0.0-20191029031824-8986dd9e96cf
+	github.com/mudutv/logging v0.2.2
+	github.com/mudutv/transport v0.10.0
+	github.com/mudutv/udp v0.1.0
+	golang.org/x/crypto v0.0.0-20200622213623-75b288015ac9
+	golang.org/x/net v0.0.0-20200625001655-4c5254603344
+	golang.org/x/xerrors v0.0.0-20191204190536-9bdfabe68543
 )
 
 go 1.13

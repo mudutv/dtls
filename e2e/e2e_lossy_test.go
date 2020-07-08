@@ -1,11 +1,14 @@
 package e2e
 
 import (
+	"crypto/tls"
+	"fmt"
 	"math/rand"
 	"testing"
 	"time"
 
-	"github.com/mudutv/dtls"
+	"github.com/mudutv/dtls/v2"
+	"github.com/mudutv/dtls/v2/pkg/crypto/selfsign"
 	transportTest "github.com/mudutv/transport/test"
 )
 
@@ -18,17 +21,21 @@ const (
   DTLS Client/Server over a lossy transport, just asserts it can handle at increasing increments
 */
 func TestPionE2ELossy(t *testing.T) {
+	// Check for leaking routines
+	report := transportTest.CheckRoutines(t)
+	defer report()
+
 	type runResult struct {
 		dtlsConn *dtls.Conn
 		err      error
 	}
 
-	serverCert, serverKey, err := dtls.GenerateSelfSigned()
+	serverCert, err := selfsign.GenerateSelfSigned()
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	clientCert, clientKey, err := dtls.GenerateSelfSigned()
+	clientCert, err := selfsign.GenerateSelfSigned()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,80 +106,102 @@ func TestPionE2ELossy(t *testing.T) {
 			DoClientAuth:    true,
 		},
 	} {
-		rand.Seed(time.Now().UTC().UnixNano())
-		chosenLoss := rand.Intn(9) + test.LossChanceRange
-		serverDone := make(chan runResult)
-		clientDone := make(chan runResult)
-		br := transportTest.NewBridge()
-
-		if err = br.SetLossChance(chosenLoss); err != nil {
-			t.Fatal(err)
+		name := fmt.Sprintf("Loss%d_MTU%d", test.LossChanceRange, test.MTU)
+		if test.DoClientAuth {
+			name += "_WithCliAuth"
 		}
+		for _, ciph := range test.CipherSuites {
+			name += "_With" + ciph.String()
+		}
+		test := test
+		t.Run(name, func(t *testing.T) {
+			// Limit runtime in case of deadlocks
+			lim := transportTest.TimeOut(lossyTestTimeout + time.Second)
+			defer lim.Stop()
 
-		go func() {
-			cfg := &dtls.Config{
-				FlightInterval:     flightInterval,
-				CipherSuites:       test.CipherSuites,
-				InsecureSkipVerify: true,
-				MTU:                test.MTU,
+			rand.Seed(time.Now().UTC().UnixNano())
+			chosenLoss := rand.Intn(9) + test.LossChanceRange
+			serverDone := make(chan runResult)
+			clientDone := make(chan runResult)
+			br := transportTest.NewBridge()
+
+			if err = br.SetLossChance(chosenLoss); err != nil {
+				t.Fatal(err)
 			}
 
-			if test.DoClientAuth {
-				cfg.Certificate = clientCert
-				cfg.PrivateKey = clientKey
-			}
-
-			client, startupErr := dtls.Client(br.GetConn0(), cfg)
-			clientDone <- runResult{client, startupErr}
-		}()
-
-		go func() {
-			cfg := &dtls.Config{
-				Certificate:    serverCert,
-				PrivateKey:     serverKey,
-				FlightInterval: flightInterval,
-				MTU:            test.MTU,
-			}
-
-			if test.DoClientAuth {
-				cfg.ClientAuth = dtls.RequireAnyClientCert
-			}
-
-			server, startupErr := dtls.Server(br.GetConn1(), cfg)
-			serverDone <- runResult{server, startupErr}
-		}()
-
-		testTimer := time.NewTimer(lossyTestTimeout)
-		var serverConn, clientConn *dtls.Conn
-		for {
-			if serverConn != nil && clientConn != nil {
-				break
-			}
-
-			br.Tick()
-			select {
-			case serverResult := <-serverDone:
-				if serverResult.err != nil {
-					t.Fatalf("Fail, serverError: clientComplete(%t) serverComplete(%t) LossChance(%d) error(%v)", clientConn != nil, serverConn != nil, chosenLoss, serverResult.err)
+			go func() {
+				cfg := &dtls.Config{
+					FlightInterval:     flightInterval,
+					CipherSuites:       test.CipherSuites,
+					InsecureSkipVerify: true,
+					MTU:                test.MTU,
 				}
 
-				serverConn = serverResult.dtlsConn
-			case clientResult := <-clientDone:
-				if clientResult.err != nil {
-					t.Fatalf("Fail, clientError: clientComplete(%t) serverComplete(%t) LossChance(%d) error(%v)", clientConn != nil, serverConn != nil, chosenLoss, clientResult.err)
+				if test.DoClientAuth {
+					cfg.Certificates = []tls.Certificate{clientCert}
 				}
 
-				clientConn = clientResult.dtlsConn
-			case <-testTimer.C:
-				t.Fatalf("Test expired: clientComplete(%t) serverComplete(%t) LossChance(%d)", clientConn != nil, serverConn != nil, chosenLoss)
-			default:
+				client, startupErr := dtls.Client(br.GetConn0(), cfg)
+				clientDone <- runResult{client, startupErr}
+			}()
+
+			go func() {
+				cfg := &dtls.Config{
+					Certificates:   []tls.Certificate{serverCert},
+					FlightInterval: flightInterval,
+					MTU:            test.MTU,
+				}
+
+				if test.DoClientAuth {
+					cfg.ClientAuth = dtls.RequireAnyClientCert
+				}
+
+				server, startupErr := dtls.Server(br.GetConn1(), cfg)
+				serverDone <- runResult{server, startupErr}
+			}()
+
+			testTimer := time.NewTimer(lossyTestTimeout)
+			var serverConn, clientConn *dtls.Conn
+			defer func() {
+				if serverConn != nil {
+					if err = serverConn.Close(); err != nil {
+						t.Error(err)
+					}
+				}
+				if clientConn != nil {
+					if err = clientConn.Close(); err != nil {
+						t.Error(err)
+					}
+				}
+			}()
+
+			for {
+				if serverConn != nil && clientConn != nil {
+					break
+				}
+
+				br.Tick()
+				select {
+				case serverResult := <-serverDone:
+					if serverResult.err != nil {
+						t.Errorf("Fail, serverError: clientComplete(%t) serverComplete(%t) LossChance(%d) error(%v)", clientConn != nil, serverConn != nil, chosenLoss, serverResult.err)
+						return
+					}
+
+					serverConn = serverResult.dtlsConn
+				case clientResult := <-clientDone:
+					if clientResult.err != nil {
+						t.Errorf("Fail, clientError: clientComplete(%t) serverComplete(%t) LossChance(%d) error(%v)", clientConn != nil, serverConn != nil, chosenLoss, clientResult.err)
+						return
+					}
+
+					clientConn = clientResult.dtlsConn
+				case <-testTimer.C:
+					t.Errorf("Test expired: clientComplete(%t) serverComplete(%t) LossChance(%d)", clientConn != nil, serverConn != nil, chosenLoss)
+					return
+				case <-time.After(10 * time.Millisecond):
+				}
 			}
-		}
-
-		if err = serverConn.Close(); err != nil {
-			t.Fatal(err)
-		}
-
-		clientConn.Close() //nolint
+		})
 	}
 }
