@@ -8,7 +8,7 @@ import (
 	"github.com/mudutv/transport/replaydetector"
 )
 
-// State holds the dtls connection state and implements both encoding.BinaryMarshaler and encoding.BinaryUnmarshaler
+// State holds the dtls connection state and implements both encoding.BinaryMarshaler and encoding.BinaryUnmarshaler 111
 type State struct {
 	localEpoch, remoteEpoch   atomic.Value
 	localSequenceNumber       []uint64 // uint48
